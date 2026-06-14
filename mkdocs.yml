@@ -47,6 +47,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Providers: providers.md
   - Design:
       - Roadmap: 00-roadmap.md
       - Architecture Overview: 01-architecture.md
@@ -57,5 +58,6 @@ nav:
   - Architecture Notes:
       - Overview: architecture/index.md
       - "Phase 1: Core Types and Events": architecture/phase-1-core-types-and-events.md
+      - "Phase 2: AI Provider Layer": architecture/phase-2-ai-provider-layer.md
   - ADRs:
       - Use Textual for TUI: adr/0001-use-textual-for-tui.md

@@ -28,6 +28,9 @@ Tau currently has:
 - development tooling
 - a basic `tau --version` CLI
 - provider-neutral message, tool, result, and event models
+- a provider-neutral model streaming interface
+- deterministic fake model provider for tests
+- OpenAI-compatible streaming provider
 - beginner-friendly design documentation
 
 ## Where to start
@@ -36,3 +39,4 @@ Tau currently has:
 - Want the full plan? Read the [Roadmap](00-roadmap.md).
 - Want the big-picture boundaries? Read [Architecture](01-architecture.md).
 - Want the current core model? Read [Core Types and Events](05-core-types-and-events.md).
+- Want to configure model backends? Read [Providers](providers.md).

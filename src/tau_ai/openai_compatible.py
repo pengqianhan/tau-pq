@@ -1,0 +1,272 @@
+"""OpenAI-compatible chat completions provider."""
+
+from collections.abc import AsyncIterator, Mapping
+from json import JSONDecodeError, dumps, loads
+from typing import Any
+
+import httpx
+
+from tau_agent.messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
+from tau_agent.tools import AgentTool, ToolCall
+from tau_agent.types import JSONValue
+from tau_ai.env import OpenAICompatibleConfig
+from tau_ai.events import (
+    ProviderErrorEvent,
+    ProviderEvent,
+    ProviderResponseEndEvent,
+    ProviderResponseStartEvent,
+    ProviderTextDeltaEvent,
+    ProviderToolCallEvent,
+)
+from tau_ai.provider import CancellationToken
+
+
+class OpenAICompatibleProvider:
+    """Provider adapter for OpenAI-compatible `/chat/completions` APIs."""
+
+    def __init__(
+        self,
+        config: OpenAICompatibleConfig,
+        *,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
+        self._config = config
+        self._client = client
+        self._owns_client = client is None
+
+    async def aclose(self) -> None:
+        """Close the underlying HTTP client if this provider created it."""
+        if self._client is not None and self._owns_client:
+            await self._client.aclose()
+            self._client = None
+
+    def stream_response(
+        self,
+        *,
+        model: str,
+        system: str,
+        messages: list[AgentMessage],
+        tools: list[AgentTool],
+        signal: CancellationToken | None = None,
+    ) -> AsyncIterator[ProviderEvent]:
+        """Stream one chat completion response as provider-neutral events."""
+
+        async def iterator() -> AsyncIterator[ProviderEvent]:
+            client = self._get_client()
+            payload = _build_chat_payload(
+                model=model,
+                system=system,
+                messages=messages,
+                tools=tools,
+            )
+            headers = {"Authorization": f"Bearer {self._config.api_key}"}
+            url = f"{self._config.base_url.rstrip('/')}/chat/completions"
+
+            yield ProviderResponseStartEvent(model=model)
+
+            try:
+                async with client.stream("POST", url, json=payload, headers=headers) as response:
+                    if response.status_code >= 400:
+                        body = await response.aread()
+                        yield ProviderErrorEvent(
+                            message=f"Provider request failed with status {response.status_code}",
+                            data={"body": body.decode(errors="replace")},
+                        )
+                        return
+
+                    content_parts: list[str] = []
+                    tool_call_builders: dict[int, _ToolCallBuilder] = {}
+                    finish_reason: str | None = None
+
+                    async for line in response.aiter_lines():
+                        if signal is not None and signal.is_cancelled():
+                            return
+
+                        event = _parse_sse_line(line)
+                        if event is None:
+                            continue
+                        if event == "[DONE]":
+                            break
+
+                        chunk = _loads_object(event)
+                        if chunk is None:
+                            yield ProviderErrorEvent(message="Provider returned invalid JSON chunk")
+                            return
+
+                        choice = _first_choice(chunk)
+                        if choice is None:
+                            continue
+
+                        finish_reason = choice.get("finish_reason") or finish_reason
+                        delta = choice.get("delta")
+                        if not isinstance(delta, Mapping):
+                            continue
+
+                        content = delta.get("content")
+                        if isinstance(content, str) and content:
+                            content_parts.append(content)
+                            yield ProviderTextDeltaEvent(delta=content)
+
+                        for tool_call_delta in _tool_call_deltas(delta):
+                            index = int(tool_call_delta.get("index", 0))
+                            builder = tool_call_builders.setdefault(index, _ToolCallBuilder())
+                            builder.add_delta(tool_call_delta)
+
+                    tool_calls = [
+                        builder.build(index)
+                        for index, builder in sorted(tool_call_builders.items())
+                    ]
+                    for tool_call in tool_calls:
+                        yield ProviderToolCallEvent(tool_call=tool_call)
+
+                    message = AssistantMessage(
+                        content="".join(content_parts),
+                        tool_calls=tool_calls,
+                    )
+                    yield ProviderResponseEndEvent(message=message, finish_reason=finish_reason)
+            except httpx.HTTPError as exc:
+                yield ProviderErrorEvent(message=str(exc))
+
+        return iterator()
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=60.0)
+        return self._client
+
+
+class _ToolCallBuilder:
+    def __init__(self) -> None:
+        self.id = ""
+        self.name = ""
+        self.arguments_parts: list[str] = []
+
+    def add_delta(self, delta: Mapping[str, Any]) -> None:
+        call_id = delta.get("id")
+        if isinstance(call_id, str):
+            self.id = call_id
+
+        function = delta.get("function")
+        if not isinstance(function, Mapping):
+            return
+
+        name = function.get("name")
+        if isinstance(name, str):
+            self.name = name
+
+        arguments = function.get("arguments")
+        if isinstance(arguments, str):
+            self.arguments_parts.append(arguments)
+
+    def build(self, index: int) -> ToolCall:
+        arguments_text = "".join(self.arguments_parts)
+        arguments = _loads_object(arguments_text) if arguments_text else {}
+        if arguments is None:
+            arguments = {"_raw_arguments": arguments_text}
+
+        return ToolCall(
+            id=self.id or f"tool-call-{index}",
+            name=self.name,
+            arguments=arguments,
+        )
+
+
+def _build_chat_payload(
+    *,
+    model: str,
+    system: str,
+    messages: list[AgentMessage],
+    tools: list[AgentTool],
+) -> dict[str, JSONValue]:
+    payload: dict[str, JSONValue] = {
+        "model": model,
+        "stream": True,
+        "messages": [
+            _system_message(system),
+            *[_message_to_openai(message) for message in messages],
+        ],
+    }
+    if tools:
+        payload["tools"] = [_tool_to_openai(tool) for tool in tools]
+    return payload
+
+
+def _system_message(system: str) -> dict[str, JSONValue]:
+    return {"role": "system", "content": system}
+
+
+def _message_to_openai(message: AgentMessage) -> dict[str, JSONValue]:
+    if isinstance(message, UserMessage):
+        return {"role": "user", "content": message.content}
+
+    if isinstance(message, AssistantMessage):
+        item: dict[str, JSONValue] = {"role": "assistant", "content": message.content}
+        if message.tool_calls:
+            item["tool_calls"] = [
+                _tool_call_to_openai(tool_call) for tool_call in message.tool_calls
+            ]
+        return item
+
+    if isinstance(message, ToolResultMessage):
+        return {
+            "role": "tool",
+            "tool_call_id": message.tool_call_id,
+            "name": message.name,
+            "content": message.content,
+        }
+
+
+def _tool_to_openai(tool: AgentTool) -> dict[str, JSONValue]:
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": dict(tool.input_schema),
+        },
+    }
+
+
+def _tool_call_to_openai(tool_call: ToolCall) -> dict[str, JSONValue]:
+    return {
+        "id": tool_call.id,
+        "type": "function",
+        "function": {
+            "name": tool_call.name,
+            "arguments": dumps(tool_call.arguments),
+        },
+    }
+
+
+def _parse_sse_line(line: str) -> str | None:
+    line = line.strip()
+    if not line or not line.startswith("data:"):
+        return None
+    return line.removeprefix("data:").strip()
+
+
+def _loads_object(value: str) -> dict[str, JSONValue] | None:
+    try:
+        loaded = loads(value)
+    except JSONDecodeError:
+        return None
+    if isinstance(loaded, dict):
+        return loaded
+    return None
+
+
+def _first_choice(chunk: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    choices = chunk.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    choice = choices[0]
+    if not isinstance(choice, Mapping):
+        return None
+    return choice
+
+
+def _tool_call_deltas(delta: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    tool_calls = delta.get("tool_calls")
+    if not isinstance(tool_calls, list):
+        return []
+    return [tool_call for tool_call in tool_calls if isinstance(tool_call, Mapping)]

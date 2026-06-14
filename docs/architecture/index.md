@@ -21,5 +21,6 @@ The most important boundary is that `tau_agent` should stay portable. It can def
 ## Phase notes
 
 - [Phase 1: Core Types and Events](phase-1-core-types-and-events.md)
+- [Phase 2: AI Provider Layer](phase-2-ai-provider-layer.md)
 
 More pages will be added here as each phase lands.
