@@ -8,10 +8,13 @@ development tooling, design documents, and a basic `tau --version` command.
 ## Development
 
 ```bash
-uv sync --dev
+uv sync --dev --group docs
 uv run tau --version
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy
+
+# Documentation site
+uv run --group docs mkdocs serve
 ```
