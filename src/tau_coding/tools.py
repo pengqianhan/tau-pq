@@ -1,7 +1,10 @@
-"""Built-in coding tools for Tau sessions and CLIs.
+"""Built-in filesystem and shell tools for Tau coding sessions.
 
-These tools intentionally follow Pi's coding-tool contracts closely while staying
-inside Tau's simpler Python event/result model.
+The module exposes factory functions that create provider-neutral `AgentTool`
+objects plus richer `ToolDefinition` objects for callers that need prompt
+metadata and JSON schemas. The tools operate relative to a configurable working
+directory, return structured `AgentToolResult` values, and keep local
+filesystem/shell behavior outside the reusable `tau_agent` package.
 """
 
 import asyncio
@@ -31,7 +34,14 @@ class ToolInputError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class TruncationResult:
-    """Pi-style truncation metadata for tool outputs."""
+    """Metadata describing how a tool output was shortened.
+
+    `content` contains the returned slice. The remaining fields record whether
+    truncation happened, whether the line or byte limit was responsible, the
+    total size of the original output, the size of the returned output, and
+    edge cases such as partial-line output or a first line that is too large to
+    display safely.
+    """
 
     content: str
     truncated: bool
@@ -51,7 +61,13 @@ class TruncationResult:
 
 @dataclass(frozen=True, slots=True)
 class ToolDefinition:
-    """Tau equivalent of Pi's coding-agent ToolDefinition."""
+    """Complete definition for a coding tool before provider conversion.
+
+    A definition contains the tool name, user-facing description, prompt
+    metadata, JSON input schema, and async executor. `to_agent_tool()` converts
+    it into the smaller `AgentTool` type consumed by the provider-neutral agent
+    loop while preserving prompt metadata for clients that render tool guidance.
+    """
 
     name: str
     description: str
@@ -75,7 +91,14 @@ _file_locks: dict[Path, asyncio.Lock] = {}
 
 
 def create_coding_tools(*, cwd: str | Path | None = None) -> list[AgentTool]:
-    """Create Tau's default coding tools rooted at `cwd` or the current directory."""
+    """Create the default coding-tool set for a local project.
+
+    The returned tools are ordered as `read`, `write`, `edit`, and `bash`.
+    Relative paths used with those tools are resolved against `cwd`; when `cwd`
+    is omitted, the process current working directory at factory-call time is
+    used. The tools share per-path write/edit locks within this process so
+    concurrent mutations of the same file do not interleave.
+    """
     root = Path.cwd() if cwd is None else Path(cwd)
     return [
         create_read_tool(cwd=root),
@@ -86,7 +109,20 @@ def create_coding_tools(*, cwd: str | Path | None = None) -> list[AgentTool]:
 
 
 def create_read_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinition:
-    """Create the Pi-like read tool definition."""
+    """Create a definition for the `read` tool.
+
+    The tool reads a file resolved relative to `cwd` unless an absolute path is
+    supplied. Text files are decoded as UTF-8 and may be sliced with optional
+    1-indexed `offset` and positive integer `limit` arguments. Returned text is
+    truncated to `DEFAULT_MAX_OUTPUT_LINES` lines or `DEFAULT_MAX_OUTPUT_BYTES`
+    bytes, whichever comes first, and continuation hints are appended when more
+    lines remain. Supported image paths (`jpg`, `png`, `gif`, and `webp`) are
+    detected by MIME type and returned as base64 metadata instead of text.
+
+    The executor raises `ToolInputError` for invalid arguments, missing files,
+    directories, and offsets beyond the end of the file. Successful results
+    include the resolved path and truncation metadata in `data`.
+    """
     root = Path.cwd() if cwd is None else Path(cwd)
 
     async def execute(arguments: Mapping[str, JSONValue]) -> AgentToolResult:
@@ -205,11 +241,23 @@ def create_read_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinit
 
 
 def create_read_tool(*, cwd: str | Path | None = None) -> AgentTool:
+    """Create an `AgentTool` for reading UTF-8 text files and supported images."""
     return create_read_tool_definition(cwd=cwd).to_agent_tool()
 
 
 def create_write_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinition:
-    """Create the Pi-like write tool definition."""
+    """Create a definition for the `write` tool.
+
+    The tool writes the supplied string `content` to `path`, resolving relative
+    paths against `cwd`. Parent directories are created automatically and any
+    existing file is overwritten. Writes use UTF-8 text encoding and are guarded
+    by a per-path async lock so multiple writes/edits to the same resolved file
+    are serialized within this process.
+
+    The executor raises `ToolInputError` when `path` or `content` has the wrong
+    type. Successful results include the resolved path and number of characters
+    written in `data`.
+    """
     root = Path.cwd() if cwd is None else Path(cwd)
 
     async def execute(arguments: Mapping[str, JSONValue]) -> AgentToolResult:
@@ -249,11 +297,28 @@ def create_write_tool_definition(*, cwd: str | Path | None = None) -> ToolDefini
 
 
 def create_write_tool(*, cwd: str | Path | None = None) -> AgentTool:
+    """Create an `AgentTool` for creating or overwriting UTF-8 text files."""
     return create_write_tool_definition(cwd=cwd).to_agent_tool()
 
 
 def create_edit_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinition:
-    """Create the Pi-like edit tool definition."""
+    """Create a definition for the `edit` tool.
+
+    The tool applies one or more exact text replacements to a single UTF-8 file
+    resolved relative to `cwd`. Each edit item contains `oldText` and `newText`.
+    Every `oldText` must be non-empty, must occur exactly once in the original
+    file, and must not overlap another edit span. All replacements are validated
+    before writing, so the file is left unchanged if any edit fails.
+
+    File content and edit text are normalized to LF for matching, then the
+    original file's dominant line ending is restored after replacement. UTF-8
+    byte-order marks are preserved. The executor also accepts legacy top-level
+    `oldText`/`newText` arguments and JSON-string `edits` values by normalizing
+    them into the canonical edits list.
+
+    Successful results include the resolved path, edit count, an ndiff-style
+    diff, a unified patch, and the first changed line in `data`.
+    """
     root = Path.cwd() if cwd is None else Path(cwd)
 
     async def execute(arguments: Mapping[str, JSONValue]) -> AgentToolResult:
@@ -341,11 +406,27 @@ def create_edit_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinit
 
 
 def create_edit_tool(*, cwd: str | Path | None = None) -> AgentTool:
+    """Create an `AgentTool` for exact, validated text replacement in one file."""
     return create_edit_tool_definition(cwd=cwd).to_agent_tool()
 
 
 def create_bash_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinition:
-    """Create the Pi-like bash tool definition."""
+    """Create a definition for the `bash` tool.
+
+    The tool runs a shell command with `cwd` as the subprocess working
+    directory and combines stdout and stderr into one UTF-8 decoded output
+    stream. The optional `timeout` argument must be positive when supplied. On
+    timeout, POSIX commands are started in a new session and the entire process
+    group is killed so shell children from pipelines or compound commands do
+    not continue running; non-POSIX platforms fall back to killing the direct
+    subprocess.
+
+    Output is tail-truncated to `DEFAULT_MAX_OUTPUT_LINES` lines or
+    `DEFAULT_MAX_OUTPUT_BYTES` bytes. When truncation occurs, the full output is
+    written to a temporary log file and that path is reported in `data`.
+    Successful and failed command results both include exit code, timeout state,
+    duration, truncation metadata, and full-output path metadata.
+    """
     root = Path.cwd() if cwd is None else Path(cwd)
 
     async def execute(arguments: Mapping[str, JSONValue]) -> AgentToolResult:
@@ -457,6 +538,7 @@ def create_bash_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinit
 
 
 def create_bash_tool(*, cwd: str | Path | None = None) -> AgentTool:
+    """Create an `AgentTool` for executing shell commands with captured output."""
     return create_bash_tool_definition(cwd=cwd).to_agent_tool()
 
 
@@ -469,7 +551,7 @@ def format_size(bytes_count: int) -> str:
 
 
 def append_status_block(text: str, status: str) -> str:
-    """Append a Pi-style status block."""
+    """Append command status text after a blank line when output already exists."""
     return f"{text}\n\n{status}" if text else status
 
 
