@@ -22,12 +22,13 @@ tau_coding   CLI app, resources, skills, extensions, commands, UI integration
 6. Non-interactive print-mode CLI.
 7. Append-only session tree persistence.
 8. Coding session wrapper with commands.
-9. Skills, prompt templates, and system prompt assembly.
-10. Rich renderers.
-11. Textual TUI behind an adapter boundary.
-12. Extensions.
-13. Compaction and context management.
-14. Packaging, docs, and examples.
+9. Skills and prompt templates.
+10. System prompt assembly.
+11. Print and event rendering modes.
+12. Textual TUI behind an adapter boundary.
+13. Extensions.
+14. Compaction and context management.
+15. Packaging, docs, and examples.
 
 ## Phase 0 deliverables
 
