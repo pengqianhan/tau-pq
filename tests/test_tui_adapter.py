@@ -83,7 +83,7 @@ def test_tui_adapter_records_tool_updates_and_results() -> None:
 
     assert [(item.role, item.text) for item in state.items] == [
         ("tool", "… reading"),
-        ("tool", "✓ read"),
+        ("tool", "✓ read\ndone"),
         ("tool", "✗ bash\nfailed"),
     ]
 

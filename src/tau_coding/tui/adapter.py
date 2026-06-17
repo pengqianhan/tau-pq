@@ -63,7 +63,7 @@ class TuiEventAdapter:
         if isinstance(event, ToolExecutionEndEvent):
             status = "✓" if event.result.ok else "✗"
             text = f"{status} {event.result.name}"
-            if not event.result.ok and event.result.content:
+            if event.result.content:
                 text = f"{text}\n{event.result.content}"
             self.state.add_item("tool", text)
             return
