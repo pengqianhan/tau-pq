@@ -208,6 +208,11 @@ Useful TUI commands:
 /skill:<name> [request]
 ```
 
+`/skill:<name>` injects the full skill markdown into the next prompt with the
+skill file location and the directory relative references should resolve from.
+For ordinary prompts, Tau lists loaded skills in the system prompt so the model
+can read a relevant skill file through the `read` tool.
+
 ## Project Context
 
 Tau discovers instruction files and includes them in the generated system

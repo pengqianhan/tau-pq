@@ -95,13 +95,12 @@ Skill commands use the roadmap syntax:
 Expansion produces prompt text like:
 
 ```md
-Use the following skill instructions:
+<skill name="python-testing" location="/path/to/python-testing/SKILL.md">
+References are relative to /path/to/python-testing.
 
-<skill name="python-testing">
 ...skill markdown...
 </skill>
 
-User request:
 add tests for parser.py
 ```
 

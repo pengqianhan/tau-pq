@@ -3,9 +3,11 @@ from pathlib import Path
 import pytest
 
 from tau_coding import (
+    Skill,
     TauResourcePaths,
     build_skill_index,
     expand_skill_command,
+    format_skill_invocation,
     load_skills,
     load_skills_with_diagnostics,
 )
@@ -135,9 +137,29 @@ def test_expand_skill_command_includes_skill_and_user_request(tmp_path: Path) ->
     expanded = expand_skill_command("/skill:testing add parser tests", skills)
 
     assert expanded is not None
-    assert '<skill name="testing">' in expanded
+    assert f'<skill name="testing" location="{skills[0].path}">' in expanded
+    assert f"References are relative to {skills[0].path.parent}." in expanded
     assert "Run pytest." in expanded
-    assert "User request:\nadd parser tests" in expanded
+    assert expanded.endswith("</skill>\n\nadd parser tests")
+
+
+def test_format_skill_invocation_without_extra_instructions(tmp_path: Path) -> None:
+    skill = Skill(
+        name="testing",
+        path=tmp_path / "skills" / "testing" / "SKILL.md",
+        content="# Testing\nRun pytest.",
+        description="Test code",
+    )
+
+    formatted = format_skill_invocation(skill)
+
+    assert formatted == (
+        f'<skill name="testing" location="{skill.path}">\n'
+        f"References are relative to {skill.path.parent}.\n\n"
+        "# Testing\n"
+        "Run pytest.\n"
+        "</skill>"
+    )
 
 
 def test_expand_skill_command_returns_none_for_normal_prompt(tmp_path: Path) -> None:

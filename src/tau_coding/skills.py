@@ -88,13 +88,24 @@ def expand_skill_command(text: str, skills: Sequence[Skill]) -> str | None:
     if skill is None:
         raise ResourceError(f"Unknown skill: {name}")
 
-    sections = [
-        "Use the following skill instructions:",
-        f'<skill name="{skill.name}">\n{skill.content.strip()}\n</skill>',
-    ]
-    if separator and request.strip():
-        sections.append(f"User request:\n{request.strip()}")
-    return "\n\n".join(sections)
+    additional_instructions = request.strip() if separator else None
+    return format_skill_invocation(skill, additional_instructions)
+
+
+def format_skill_invocation(
+    skill: Skill,
+    additional_instructions: str | None = None,
+) -> str:
+    """Format a full skill invocation prompt."""
+    skill_block = (
+        f'<skill name="{skill.name}" location="{skill.path}">\n'
+        f"References are relative to {skill.path.parent}.\n\n"
+        f"{skill.content.strip()}\n"
+        "</skill>"
+    )
+    if additional_instructions and additional_instructions.strip():
+        return f"{skill_block}\n\n{additional_instructions.strip()}"
+    return skill_block
 
 
 def build_skill_index(skills: Sequence[Skill]) -> str:

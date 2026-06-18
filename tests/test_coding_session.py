@@ -388,9 +388,62 @@ async def test_session_loads_and_expands_skills(tmp_path: Path) -> None:
     _events = await _collect_session_events(session.prompt("/skill:testing add tests"))
 
     assert [skill.name for skill in session.skills] == ["testing"]
-    assert '<skill name="testing">' in provider.calls[0][2][0].content
-    assert "User request:\nadd tests" in provider.calls[0][2][0].content
+    assert '<skill name="testing" location="' in provider.calls[0][2][0].content
+    assert "References are relative to" in provider.calls[0][2][0].content
+    assert provider.calls[0][2][0].content.endswith("</skill>\n\nadd tests")
     assert session.handle_command("/skill:testing").handled is False
+
+
+@pytest.mark.anyio
+async def test_session_skill_index_lets_agent_read_relevant_skill_file(tmp_path: Path) -> None:
+    resource_root = tmp_path / "resources"
+    skills_dir = resource_root / "skills"
+    skills_dir.mkdir(parents=True)
+    skill_path = skills_dir / "testing.md"
+    skill_path.write_text(
+        "---\ndescription: Use when writing tests\n---\n# Testing\nRun pytest.",
+        encoding="utf-8",
+    )
+    tool_call = ToolCall(id="call-1", name="read", arguments={"path": str(skill_path)})
+    provider = FakeProvider(
+        [
+            [
+                ProviderResponseStartEvent(model="fake"),
+                ProviderResponseEndEvent(
+                    message=AssistantMessage(content="Reading skill.", tool_calls=[tool_call]),
+                    finish_reason="tool_calls",
+                ),
+            ],
+            [
+                ProviderResponseStartEvent(model="fake"),
+                ProviderResponseEndEvent(message=AssistantMessage(content="Skill applied.")),
+            ],
+        ]
+    )
+    storage = JsonlSessionStorage(tmp_path / "session.jsonl")
+    session = await CodingSession.load(
+        CodingSessionConfig(
+            provider=provider,
+            model="fake",
+            storage=storage,
+            cwd=tmp_path,
+            resource_paths=TauResourcePaths(root=resource_root, agents_root=None),
+        )
+    )
+
+    _events = await _collect_session_events(session.prompt("Add tests."))
+
+    assert "<available_skills>" in provider.calls[0][1]
+    assert f"<location>{skill_path}</location>" in provider.calls[0][1]
+    assert len(provider.calls) == 2
+    tool_result = provider.calls[1][2][-1]
+    assert isinstance(tool_result, ToolResultMessage)
+    assert tool_result.tool_call_id == "call-1"
+    assert tool_result.name == "read"
+    assert tool_result.ok is True
+    assert "# Testing\nRun pytest." in tool_result.content
+    assert tool_result.data is not None
+    assert tool_result.data["path"] == str(skill_path)
 
 
 @pytest.mark.anyio

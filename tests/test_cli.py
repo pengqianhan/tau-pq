@@ -247,8 +247,9 @@ async def test_run_print_mode_expands_skill_commands(
     _captured = capsys.readouterr()
 
     assert ok is True
-    assert '<skill name="testing">' in provider.calls[0][2][0].content
-    assert "User request:\nadd tests" in provider.calls[0][2][0].content
+    assert '<skill name="testing" location="' in provider.calls[0][2][0].content
+    assert "References are relative to" in provider.calls[0][2][0].content
+    assert provider.calls[0][2][0].content.endswith("</skill>\n\nadd tests")
 
 
 @pytest.mark.anyio

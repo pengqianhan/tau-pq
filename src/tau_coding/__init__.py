@@ -73,6 +73,7 @@ from tau_coding.skills import (
     Skill,
     build_skill_index,
     expand_skill_command,
+    format_skill_invocation,
     load_skills,
     load_skills_with_diagnostics,
 )
@@ -168,6 +169,7 @@ __all__ = [
     "THINKING_LEVELS",
     "summarize_messages_for_compaction",
     "expand_skill_command",
+    "format_skill_invocation",
     "format_available_tools",
     "format_guidelines",
     "format_project_context",
