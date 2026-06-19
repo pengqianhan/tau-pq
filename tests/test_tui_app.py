@@ -1909,6 +1909,13 @@ async def test_tui_login_api_key_opens_api_provider_picker() -> None:
 async def test_tui_model_opens_interactive_picker() -> None:
     session = FakeSession()
     app = TauTuiApp(session)
+    notifications: list[str] = []
+
+    def fake_notify(message: str, **kwargs: object) -> None:
+        del kwargs
+        notifications.append(message)
+
+    app._notify = fake_notify  # type: ignore[method-assign]
 
     async with app.run_test() as pilot:
         prompt = app.query_one("#prompt")
@@ -1947,6 +1954,7 @@ async def test_tui_model_opens_interactive_picker() -> None:
     assert session.provider_name == "local"
     assert session.model == "local-model"
     assert session.prompt_texts == []
+    assert notifications == []
 
 
 @pytest.mark.anyio

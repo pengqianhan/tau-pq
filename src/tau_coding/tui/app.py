@@ -2099,7 +2099,6 @@ class TauTuiApp(App[None]):
         except Exception as exc:  # noqa: BLE001 - surface model switch failures in the TUI
             self._notify(f"Could not switch model: {exc}", severity="error")
             return
-        self._notify(f"Current model: {choice.provider_name}:{choice.model}")
         self._refresh()
 
     def _open_theme_picker(self) -> None:
