@@ -1775,6 +1775,56 @@ async def test_tui_app_runs_terminal_command_without_context() -> None:
     assert session.terminal_commands == [("pwd", False)]
     assert session.prompt_texts == []
     assert app.state.items[-1].tool_result_text == "✓ bash · not added to context\ncommand output"
+    assert app.state.items[-1].always_show_tool_result is True
+
+
+@pytest.mark.anyio
+async def test_tui_app_renders_terminal_command_output_when_tool_results_are_collapsed() -> None:
+    item = ChatItem(
+        role="tool",
+        text="$ pwd",
+        tool_result_text="✓ bash · not added to context\ncommand output",
+        always_show_tool_result=True,
+    )
+
+    console = Console(record=True, width=80)
+    console.print(render_chat_item(item, show_tool_results=item.always_show_tool_result))
+
+    assert "command output" in console.export_text()
+
+
+@pytest.mark.anyio
+async def test_tui_app_limits_terminal_command_output_preview() -> None:
+    session = FakeSession()
+    app = TauTuiApp(session)
+    output = "\n".join(f"line {index}" for index in range(130))
+
+    async def fake_run_terminal_command(
+        command: str,
+        *,
+        add_to_context: bool,
+    ) -> TerminalCommandResult:
+        return TerminalCommandResult(
+            command=command,
+            output=output,
+            exit_code=0,
+            ok=True,
+            added_to_context=add_to_context,
+        )
+
+    session.run_terminal_command = fake_run_terminal_command  # type: ignore[method-assign]
+
+    async with app.run_test() as pilot:
+        prompt = app.query_one("#prompt")
+        prompt.value = "!! seq 130"
+        await pilot.press("enter")
+        await pilot.pause()
+
+    result_text = app.state.items[-1].tool_result_text
+    assert result_text is not None
+    assert "line 119" in result_text
+    assert "line 120" not in result_text
+    assert "10 more lines" in result_text
 
 
 @pytest.mark.anyio

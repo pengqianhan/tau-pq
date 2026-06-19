@@ -70,7 +70,7 @@ from tau_coding.tui.config import (
     load_tui_settings,
     save_tui_settings,
 )
-from tau_coding.tui.state import TuiState
+from tau_coding.tui.state import TuiState, format_terminal_command_result_block
 from tau_coding.tui.widgets import (
     CompactSessionInfo,
     SessionSidebar,
@@ -1393,12 +1393,15 @@ class TauTuiApp(App[None]):
         except Exception as exc:  # noqa: BLE001 - surface command execution failures in the TUI
             self._notify(f"Could not run command: {exc}", severity="error")
             return
-        status = "✓" if result.ok else "✗"
-        suffix = " · added to context" if result.added_to_context else " · not added to context"
         self.state.add_item(
             "tool",
             f"$ {result.command}",
-            tool_result_text=f"{status} bash{suffix}\n{result.output}",
+            tool_result_text=format_terminal_command_result_block(
+                ok=result.ok,
+                added_to_context=result.added_to_context,
+                output=result.output,
+            ),
+            always_show_tool_result=True,
         )
         self._refresh()
 
