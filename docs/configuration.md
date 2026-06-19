@@ -201,8 +201,12 @@ Inside the TUI:
 
 ```text
 /resume
+/name <new name>
 /status
 ```
+
+`/name <new name>` renames the current indexed session. The new name is shown
+in the `/resume` picker and in session-id completions.
 
 ## Skills and Prompt Templates
 
