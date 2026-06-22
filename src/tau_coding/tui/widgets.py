@@ -19,6 +19,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.content import Content
 from textual.events import Resize
 from textual.geometry import Offset
 from textual.selection import Selection
@@ -154,6 +155,16 @@ def _selectable_markdown_block_class(block_class: type[Any]) -> type[Any]:
                 end=end,
                 style=self.screen.get_visual_style("screen--selection").rich_style,
             )
+
+        def get_selection(self, selection: Selection) -> tuple[str, str] | None:
+            visual = self._render()
+            text = str(visual) if isinstance(visual, Text | Content) else self.source
+            if text is None:
+                return None
+            selected_text = _extract_text_selection(text, selection)
+            if not selected_text:
+                return None
+            return selected_text, "\n"
 
     SelectableMarkdownBlock.__name__ = f"Selectable{block_class.__name__}"
     _SELECTABLE_MARKDOWN_BLOCKS[block_class] = SelectableMarkdownBlock
