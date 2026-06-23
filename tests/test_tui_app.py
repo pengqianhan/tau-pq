@@ -30,6 +30,7 @@ from tau_agent import (
 )
 from tau_coding.commands import CommandResult
 from tau_coding.credentials import FileCredentialStore, OAuthCredential
+from tau_coding.prompt_templates import PromptTemplate
 from tau_coding.provider_config import (
     OpenAICodexProviderConfig,
     OpenAICompatibleProviderConfig,
@@ -56,8 +57,11 @@ from tau_coding.tui.app import (
     ThemePickerScreen,
     TreePickerScreen,
     _activity_prompt_border_color,
+    _completion_selected_render_line,
     _terminal_command_prefix_span,
+    _visible_completion_state,
 )
+from tau_coding.tui.autocomplete import CompletionItem, CompletionState
 from tau_coding.tui.config import (
     HIGH_CONTRAST_THEME,
     TAU_LIGHT_THEME,
@@ -1682,6 +1686,30 @@ async def test_tui_app_submits_multiline_prompt_with_enter() -> None:
 
 
 @pytest.mark.anyio
+async def test_tui_app_completes_custom_prompt_slash_command() -> None:
+    session = FakeSession()
+    session.prompt_templates = (
+        PromptTemplate(
+            name="example",
+            path=Path("example.md"),
+            content="Example prompt.",
+            description="Run the example prompt.",
+        ),
+    )
+    app = TauTuiApp(session)
+
+    async with app.run_test() as pilot:
+        prompt = app.query_one("#prompt")
+        prompt.value = "/exa"
+        app._completion_state = app._build_completion_state(prompt.value)
+        app._refresh_completions()
+
+        await pilot.press("tab")
+
+        assert prompt.value == "/example"
+
+
+@pytest.mark.anyio
 async def test_tui_app_completes_registered_slash_command() -> None:
     app = TauTuiApp(FakeSession())
 
@@ -2071,6 +2099,139 @@ async def test_tui_app_tree_picker_toggles_tool_calls() -> None:
             "* assistant: Right",
         ]
         assert tree_list.index == 3
+
+
+@pytest.mark.anyio
+def test_completion_selected_render_line_accounts_for_group_headers() -> None:
+    state = CompletionState(
+        items=(
+            CompletionItem(
+                display="/session",
+                replacement="/session",
+                start=0,
+                end=2,
+                category="Commands",
+            ),
+            CompletionItem(
+                display="/example",
+                replacement="/example",
+                start=0,
+                end=2,
+                category="Custom prompts",
+            ),
+        ),
+        selected_index=1,
+    )
+
+    assert _completion_selected_render_line(state) == 3
+
+
+@pytest.mark.anyio
+def test_visible_completion_state_keeps_selected_item_in_render_window() -> None:
+    items = tuple(
+        CompletionItem(
+            display=f"/prompt-{index:02d}",
+            replacement=f"/prompt-{index:02d}",
+            start=0,
+            end=1,
+            category="Custom prompts",
+        )
+        for index in range(30)
+    )
+    state = CompletionState(items=items, selected_index=24)
+
+    visible = _visible_completion_state(state, max_lines=8)
+
+    assert visible.selected is not None
+    assert visible.selected.display == "/prompt-24"
+    assert visible.selected_index < len(visible.items)
+    assert len(visible.items) < len(items)
+    assert _completion_selected_render_line(visible) < 8
+
+
+def test_visible_completion_state_accounts_for_wrapped_descriptions() -> None:
+    items = tuple(
+        CompletionItem(
+            display=f"/prompt-{index:02d}",
+            replacement=f"/prompt-{index:02d}",
+            start=0,
+            end=1,
+            description=(
+                "This prompt has a long description that wraps across multiple lines "
+                "inside the completion table."
+            ),
+            category="Custom prompts",
+        )
+        for index in range(12)
+    )
+    state = CompletionState(items=items, selected_index=8)
+
+    visible = _visible_completion_state(state, max_lines=8, width=48)
+
+    assert visible.selected is not None
+    assert visible.selected.display == "/prompt-08"
+    assert tui_app._completion_render_line_count(visible, width=48) <= 8
+    assert _completion_selected_render_line(visible, width=48) < 7
+
+
+def test_visible_completion_state_keeps_selected_item_above_bottom_edge() -> None:
+    items = tuple(
+        CompletionItem(
+            display=f"/prompt-{index:02d}",
+            replacement=f"/prompt-{index:02d}",
+            start=0,
+            end=1,
+            category="Custom prompts",
+        )
+        for index in range(30)
+    )
+    state = CompletionState(items=items, selected_index=15)
+
+    visible = _visible_completion_state(state, max_lines=8)
+
+    assert visible.selected is not None
+    assert visible.selected.display == "/prompt-15"
+    assert _completion_selected_render_line(visible) < 7
+
+
+@pytest.mark.anyio
+async def test_tui_app_scrolls_completion_selection_into_view() -> None:
+    session = FakeSession()
+    session.prompt_templates = tuple(
+        PromptTemplate(
+            name=f"prompt-{index:02d}",
+            path=Path(f"prompt-{index:02d}.md"),
+            content="Run.",
+        )
+        for index in range(30)
+    )
+    app = TauTuiApp(session)
+
+    async with app.run_test() as pilot:
+        prompt = app.query_one("#prompt")
+        prompt.focus()
+        prompt.value = "/"
+        app._completion_state = app._build_completion_state(prompt.value)
+        app._refresh_completions()
+        visible = tui_app._visible_completion_state(
+            app._completion_state,
+            max_lines=tui_app.COMPLETION_MAX_VISIBLE_LINES,
+        )
+        assert visible.items[0].display != "/prompt-00"
+
+        for _ in range(35):
+            app.action_completion_next()
+            await pilot.pause()
+
+        visible = tui_app._visible_completion_state(
+            app._completion_state,
+            max_lines=tui_app.COMPLETION_MAX_VISIBLE_LINES,
+        )
+        selected = app._completion_state.selected
+        assert selected is not None
+        assert visible.selected is not None
+        assert visible.selected.display == selected.display
+        assert visible.items[0].display != "/prompt-00"
 
 
 @pytest.mark.anyio
@@ -2886,6 +3047,81 @@ async def test_tui_app_runs_terminal_command_without_context() -> None:
     assert session.prompt_texts == []
     assert app.state.items[-1].tool_result_text == "✓ bash · not added to context\ncommand output"
     assert app.state.items[-1].always_show_tool_result is True
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("add_to_context", [True, False])
+async def test_tui_app_renders_terminal_command_while_running(add_to_context: bool) -> None:
+    session = FakeSession()
+    app = TauTuiApp(session)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_run_terminal_command(
+        command: str,
+        *,
+        add_to_context: bool,
+    ) -> TerminalCommandResult:
+        started.set()
+        await release.wait()
+        return TerminalCommandResult(
+            command=command,
+            output="finished",
+            exit_code=0,
+            ok=True,
+            added_to_context=add_to_context,
+        )
+
+    session.run_terminal_command = fake_run_terminal_command  # type: ignore[method-assign]
+
+    async with app.run_test() as pilot:
+        task = asyncio.create_task(
+            app._run_terminal_command("sleep 1", add_to_context=add_to_context)
+        )
+        await started.wait()
+        await pilot.pause()
+
+        assert [(item.role, item.text, item.tool_result_text) for item in app.state.items] == [
+            ("tool", "$ sleep 1", None)
+        ]
+        assert app.state.items[-1].always_show_tool_result is True
+
+        release.set()
+        await task
+
+    context_label = "added to context" if add_to_context else "not added to context"
+    assert app.state.items[-1].tool_result_text == f"✓ bash · {context_label}\nfinished"
+
+
+@pytest.mark.anyio
+async def test_tui_app_marks_failed_terminal_command_as_error() -> None:
+    session = FakeSession()
+    app = TauTuiApp(session)
+
+    async def fake_run_terminal_command(
+        command: str,
+        *,
+        add_to_context: bool,
+    ) -> TerminalCommandResult:
+        return TerminalCommandResult(
+            command=command,
+            output="failed",
+            exit_code=2,
+            ok=False,
+            added_to_context=add_to_context,
+        )
+
+    session.run_terminal_command = fake_run_terminal_command  # type: ignore[method-assign]
+
+    async with app.run_test() as pilot:
+        prompt = app.query_one("#prompt")
+        prompt.value = "!! false"
+        await pilot.press("enter")
+        await pilot.pause()
+
+    assert session.prompt_texts == []
+    assert app.state.items[-1].text == "$ false"
+    assert app.state.items[-1].tool_result_text == "✗ bash · not added to context\nfailed"
 
 
 @pytest.mark.anyio
