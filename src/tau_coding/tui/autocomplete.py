@@ -304,7 +304,15 @@ def _command_completions(
     suggestions: list[CompletionItem] = []
     for command in registry.list_commands():
         suggestions.extend(_command_alias_completions(command, prefix=prefix, token_end=token_end))
-    return tuple(sorted(suggestions, key=lambda item: item.display))
+    return tuple(sorted(suggestions, key=lambda item: _command_completion_sort_key(item, prefix)))
+
+
+def _command_completion_sort_key(item: CompletionItem, prefix: str) -> tuple[int, str]:
+    if not prefix:
+        return (0, item.display)
+    display_name = item.display.removeprefix("/").removesuffix(":").lower()
+    direct_match_rank = 0 if display_name.startswith(prefix) else 1
+    return (direct_match_rank, item.display)
 
 
 def _command_alias_completions(

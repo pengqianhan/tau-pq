@@ -55,6 +55,19 @@ def test_command_completion_matches_search_terms_with_canonical_replacement() ->
     assert sessions_state.selected.apply("/sess") == "/session"
 
 
+def test_command_completion_prioritizes_direct_matches_over_search_terms() -> None:
+    state = build_completion_state(
+        "/res",
+        command_registry=create_default_command_registry(),
+        skills=(),
+        prompt_templates=(),
+    )
+
+    assert [item.display for item in state.items[:2]] == ["/resume", "/new"]
+    assert state.selected is not None
+    assert state.selected.apply("/res") == "/resume"
+
+
 def test_skill_command_is_not_registered_for_command_completion() -> None:
     state = build_completion_state(
         "/ski",

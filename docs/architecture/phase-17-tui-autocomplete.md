@@ -42,6 +42,13 @@ Examples:
 /ski      -> /skill:
 ```
 
+Command completion reads canonical command names, executable aliases, and
+non-executable search terms from the active `CommandRegistry`. Search terms are
+filters only: accepting one inserts the canonical command. For example, `/res`
+can match `/resume` directly and `/new` through the `/new` command's `reset`
+search term, so autocomplete ranks the direct command or alias match first and
+then keeps fallback search-term matches available below it.
+
 When the prompt starts with `/skill:`, Tau shows matching loaded skills.
 Accepting a skill completion preserves the rest of the request:
 
