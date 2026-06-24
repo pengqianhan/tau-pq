@@ -78,6 +78,7 @@ from tau_coding.tui.widgets import (
     StreamingTranscriptMessageWidget,
     TranscriptMessageWidget,
     TranscriptView,
+    ThemedMarkdownWidget,
     _compact_token_count,
     _syntax_language,
     _transcript_plain_body_text,
@@ -891,6 +892,20 @@ def test_markdown_tables_use_highlight_color_for_headers() -> None:
 
     assert "38;2;244;162;97" in output
     assert "\x1b[36" not in output
+
+
+@pytest.mark.anyio
+async def test_textual_markdown_widget_uses_theme_link_style() -> None:
+    app = TauTuiApp(
+        FakeSession([AssistantMessage(content="Read [docs](https://example.com).")]),
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        markdown = app.query_one(ThemedMarkdownWidget)
+
+    assert markdown.tau_link_style == TAU_DARK_THEME.markdown_link
 
 
 def test_textual_markdown_uses_theme_highlight_and_aqua_inline_code() -> None:

@@ -122,7 +122,7 @@ class TauMarkdownBlock(MarkdownBlock):
         markdown = self._markdown
         if not isinstance(markdown, ThemedMarkdownWidget):
             return content
-        link_style = TextualStyle.parse(markdown.link_style)
+        link_style = TextualStyle.parse(markdown.tau_link_style)
         spans = []
         for span in content.spans:
             style = span.style
@@ -171,7 +171,7 @@ class ThemedMarkdownWidget(TextualMarkdown):
         theme: TuiTheme,
         classes: str | None = None,
     ) -> None:
-        self.link_style = theme.markdown_link
+        self.tau_link_style = theme.markdown_link
         super().__init__(markdown, classes=classes)
 
 
