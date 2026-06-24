@@ -80,6 +80,11 @@ class TuiTheme:
     accent: str
     highlight_background: str
     highlight_text: str
+    markdown_heading: str
+    markdown_table_header: str
+    markdown_inline_code: str
+    markdown_link: str
+    markdown_bullet: str
     completion_selected: str
     completion_selected_description: str
     completion_description: str
@@ -104,6 +109,11 @@ TAU_DARK_THEME = TuiTheme(
     accent="#f4a261",
     highlight_background="#a7f3f0",
     highlight_text="#061a1a",
+    markdown_heading="#f4a261",
+    markdown_table_header="#f4a261",
+    markdown_inline_code="#67e8f9",
+    markdown_link="#93c5fd",
+    markdown_bullet="#f4a261",
     completion_selected="bold #061a1a on #a7f3f0",
     completion_selected_description="#123333 on #a7f3f0",
     completion_description="#667085",
@@ -139,6 +149,11 @@ HIGH_CONTRAST_THEME = TuiTheme(
     accent="#ffb454",
     highlight_background="#7fffd4",
     highlight_text="#000000",
+    markdown_heading="#ffb454",
+    markdown_table_header="#ffb454",
+    markdown_inline_code="#7fffd4",
+    markdown_link="#80d8ff",
+    markdown_bullet="#ffb454",
     completion_selected="bold black on #7fffd4",
     completion_selected_description="black on #7fffd4",
     completion_description="white",
@@ -174,6 +189,11 @@ TAU_LIGHT_THEME = TuiTheme(
     accent="#0f766e",
     highlight_background="#dbeafe",
     highlight_text="#1d4ed8",
+    markdown_heading="#1d4ed8",
+    markdown_table_header="#1d4ed8",
+    markdown_inline_code="#0891b2",
+    markdown_link="#2563eb",
+    markdown_bullet="#1d4ed8",
     completion_selected="bold #0f172a on #dbeafe",
     completion_selected_description="#334155 on #dbeafe",
     completion_description="#667085",

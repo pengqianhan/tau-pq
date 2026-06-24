@@ -846,7 +846,7 @@ def test_dark_theme_markdown_code_uses_aqua_highlight() -> None:
 
     output = console.export_text(styles=True)
 
-    assert "38;2;167;243;240" in output
+    assert "38;2;103;232;249" in output
     assert "38;2;244;162;97" not in output
 
 
@@ -861,6 +861,24 @@ def test_assistant_markdown_titles_use_highlight_color_and_left_alignment() -> N
     assert "Title" in plain_output
     assert not plain_output.splitlines()[1].startswith(" " * 20)
     assert LeftAlignedMarkdownHeading.LEVEL_ALIGN["h1"] == "left"
+
+
+def test_dark_theme_markdown_links_use_theme_link_color() -> None:
+    console = Console(record=True, width=80, color_system="truecolor")
+    console.print(render_chat_item(ChatItem(role="assistant", text="Read [docs](https://example.com).")))
+
+    output = console.export_text(styles=True)
+
+    assert "38;2;147;197;253" in output
+
+
+def test_dark_theme_markdown_bullets_use_theme_bullet_color() -> None:
+    console = Console(record=True, width=80, color_system="truecolor")
+    console.print(render_chat_item(ChatItem(role="assistant", text="- first\n- second")))
+
+    output = console.export_text(styles=True)
+
+    assert "38;2;244;162;97" in output
 
 
 def test_markdown_tables_use_highlight_color_for_headers() -> None:
@@ -878,8 +896,11 @@ def test_markdown_tables_use_highlight_color_for_headers() -> None:
 def test_textual_markdown_uses_theme_highlight_and_aqua_inline_code() -> None:
     variables = _theme_css_variables(TAU_LIGHT_THEME)
 
-    assert variables["tau-markdown-highlight"] == TAU_LIGHT_THEME.highlight_text
-    assert variables["tau-markdown-inline-code"] == "#0891b2"
+    assert variables["tau-markdown-highlight"] == TAU_LIGHT_THEME.markdown_heading
+    assert variables["tau-markdown-table-header"] == TAU_LIGHT_THEME.markdown_table_header
+    assert variables["tau-markdown-inline-code"] == TAU_LIGHT_THEME.markdown_inline_code
+    assert variables["tau-markdown-link"] == TAU_LIGHT_THEME.markdown_link
+    assert variables["tau-markdown-bullet"] == TAU_LIGHT_THEME.markdown_bullet
 
 
 def test_light_theme_markdown_code_uses_aqua_without_background() -> None:

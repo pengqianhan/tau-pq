@@ -3244,8 +3244,11 @@ def _theme_css_variables(theme: TuiTheme) -> dict[str, str]:
         "tau-accent": theme.accent,
         "tau-highlight-background": theme.highlight_background,
         "tau-highlight-text": theme.highlight_text,
-        "tau-markdown-highlight": _markdown_theme_highlight_color(theme),
-        "tau-markdown-inline-code": _markdown_theme_inline_code_color(theme),
+        "tau-markdown-highlight": theme.markdown_heading,
+        "tau-markdown-table-header": theme.markdown_table_header,
+        "tau-markdown-inline-code": theme.markdown_inline_code,
+        "tau-markdown-link": theme.markdown_link,
+        "tau-markdown-bullet": theme.markdown_bullet,
         "footer-background": theme.chrome_background,
         "footer-foreground": theme.chrome_text,
         "footer-description-background": theme.chrome_background,
@@ -3254,18 +3257,6 @@ def _theme_css_variables(theme: TuiTheme) -> dict[str, str]:
         "footer-key-foreground": theme.accent,
         "footer-item-background": theme.chrome_background,
     }
-
-
-def _markdown_theme_highlight_color(theme: TuiTheme) -> str:
-    if theme.name == "tau-light":
-        return theme.highlight_text
-    return theme.accent
-
-
-def _markdown_theme_inline_code_color(theme: TuiTheme) -> str:
-    if theme.name == "tau-light":
-        return "#0891b2"
-    return theme.highlight_background
 
 
 def _render_queued_messages(state: TuiState, *, theme: TuiTheme) -> Group:

@@ -19,12 +19,13 @@ from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
 from textual.containers import Horizontal, VerticalScroll
+from textual.content import Style as TextualStyle
 from textual.events import Resize
 from textual.geometry import Offset
 from textual.selection import Selection
 from textual.widgets import Markdown as TextualMarkdown
 from textual.widgets import Static
-from textual.widgets.markdown import MarkdownStream
+from textual.widgets.markdown import MarkdownBlock, MarkdownStream
 
 from tau_agent.tools import AgentTool
 from tau_coding.prompt_templates import PromptTemplate
@@ -113,8 +114,28 @@ class NonSelectableStatic(Static):
     ALLOW_SELECT = False
 
 
+class TauMarkdownBlock(MarkdownBlock):
+    """Markdown block that applies Tau's themed inline link color."""
+
+    def _token_to_content(self, token: Any) -> Any:
+        content = super()._token_to_content(token)
+        markdown = self._markdown
+        if not isinstance(markdown, ThemedMarkdownWidget):
+            return content
+        link_style = TextualStyle.parse(markdown.link_style)
+        spans = []
+        for span in content.spans:
+            style = span.style
+            if isinstance(style, TextualStyle) and "@click" in style.meta:
+                style = link_style + style
+            spans.append(type(span)(span.start, span.end, style))
+        return type(content)(content.plain, spans=spans)
+
+
 class ThemedMarkdownWidget(TextualMarkdown):
     """Textual Markdown widget reserved for Tau transcript streaming."""
+
+    BLOCKS = {**TextualMarkdown.BLOCKS, "paragraph_open": TauMarkdownBlock}
 
     DEFAULT_CSS = """
     ThemedMarkdownWidget MarkdownH1,
@@ -133,8 +154,12 @@ class ThemedMarkdownWidget(TextualMarkdown):
         background: transparent !important;
     }
 
+    ThemedMarkdownWidget MarkdownBullet {
+        color: $tau-markdown-bullet;
+    }
+
     ThemedMarkdownWidget MarkdownTableContent > .header {
-        color: $tau-markdown-highlight;
+        color: $tau-markdown-table-header;
         text-style: bold;
     }
     """
@@ -146,7 +171,7 @@ class ThemedMarkdownWidget(TextualMarkdown):
         theme: TuiTheme,
         classes: str | None = None,
     ) -> None:
-        del theme
+        self.link_style = theme.markdown_link
         super().__init__(markdown, classes=classes)
 
 
@@ -910,6 +935,8 @@ def _render_chat_body(
             inline_code_theme=syntax_theme,
             heading_style=_markdown_highlight_style(theme),
             inline_code_style=_markdown_inline_code_style(theme),
+            link_style=theme.markdown_link,
+            bullet_style=theme.markdown_bullet,
         )
     fenced_body = _render_fenced_body(
         text,
@@ -971,6 +998,8 @@ class ThemedMarkdown(Markdown):
         *,
         heading_style: str,
         inline_code_style: str,
+        link_style: str,
+        bullet_style: str,
         code_theme: str,
         inline_code_theme: str,
         style: str = "none",
@@ -983,27 +1012,39 @@ class ThemedMarkdown(Markdown):
         )
         self.heading_style = heading_style
         self.inline_code_style = inline_code_style
+        self.link_style = link_style
+        self.bullet_style = bullet_style
 
     def __rich_console__(self, console: Console, options: Any) -> Any:
-        with console.use_theme(_markdown_theme(self.heading_style, self.inline_code_style)):
+        with console.use_theme(
+            _markdown_theme(
+                self.heading_style,
+                self.inline_code_style,
+                self.link_style,
+                self.bullet_style,
+            )
+        ):
             yield from super().__rich_console__(console, options)
 
 
 def _markdown_highlight_style(theme: TuiTheme) -> str:
-    if theme.name == "tau-light":
-        return theme.highlight_text
-    return theme.accent
+    return theme.markdown_heading
 
 
 def _markdown_inline_code_style(theme: TuiTheme) -> str:
-    if theme.name == "tau-light":
-        return "#0891b2"
-    return theme.highlight_background
+    return theme.markdown_inline_code
 
 
-def _markdown_theme(heading_style: str, inline_code_style: str) -> Theme:
+def _markdown_theme(
+    heading_style: str,
+    inline_code_style: str,
+    link_style: str,
+    bullet_style: str,
+) -> Theme:
     highlight = Style.parse(heading_style)
     inline_code = Style.parse(inline_code_style)
+    link = Style.parse(link_style)
+    bullet = Style.parse(bullet_style)
     return Theme(
         {
             "markdown.h1": highlight + Style(bold=True),
@@ -1012,9 +1053,11 @@ def _markdown_theme(heading_style: str, inline_code_style: str) -> Theme:
             "markdown.h4": highlight + Style(bold=True),
             "markdown.h5": highlight + Style(bold=True),
             "markdown.h6": highlight + Style(bold=True),
-            "markdown.item.bullet": highlight,
-            "markdown.item.number": highlight,
+            "markdown.item.bullet": bullet,
+            "markdown.item.number": bullet,
             "markdown.block_quote": highlight,
+            "markdown.link": link,
+            "markdown.link_url": link,
             "markdown.table.header": highlight + Style(bold=True),
             "markdown.table.border": highlight,
             "markdown.code": inline_code,
