@@ -23,7 +23,7 @@ tau [OPTIONS] [PROMPT] [COMMAND] [ARGS]
 | `tau sessions` | List indexed sessions (id, title, model, cwd) |
 | `tau export <ref> [dest] [--format html\|jsonl]` | Export a session id or JSONL path (HTML default) |
 | `tau providers` | List configured providers and how each authenticates |
-| `tau setup [--provider …] [--model …] …` | Create/update an OpenAI-compatible provider |
+| `tau [setup options] setup` | Create/update an OpenAI-compatible provider |
 
 ## Options
 
@@ -39,9 +39,9 @@ tau [OPTIONS] [PROMPT] [COMMAND] [ARGS]
 | `--auto-compact-threshold INT` | Auto-compact above this rough token estimate |
 | `--version` | Print the version and exit |
 
-### `tau setup` options
+### Provider setup options
 
-`tau setup` registers an OpenAI-compatible provider. It reuses these flags:
+Tau's setup mode registers an OpenAI-compatible provider. Put these flags before the final `setup` argument:
 
 | Flag | Default | Description |
 | --- | --- | --- |

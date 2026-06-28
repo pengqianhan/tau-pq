@@ -98,14 +98,11 @@ tau -p "summarize the architecture"
 tau --cwd /path/to/project -p "find the CLI entry point"
 ```
 
-Tau needs a model provider. The quickest path is an environment variable:
+Tau needs a model provider. Start Tau and connect one with `/login`:
 
 ```bash
-export OPENAI_API_KEY="sk-..."
-tau --provider openai --model gpt-4.1
+tau
 ```
-
-You can also configure providers from inside Tau:
 
 ```text
 /login

@@ -40,7 +40,7 @@ These are the default keys in the interactive [TUI](../guides/tui.md). Run
 | Key | Action |
 | --- | --- |
 | `Ctrl+O` | Toggle full tool output (vs. compact preview) |
-| `Ctrl+C` | Copy the focused message |
+| `Ctrl+C` | Clear the prompt input |
 | `Ctrl+D` | Quit |
 
 :::note[Remapping]

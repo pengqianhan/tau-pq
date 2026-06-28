@@ -7,18 +7,23 @@ A **provider** is the service hosting AI models; a **model** is the specific one
 you talk to. Tau ships with several built-in providers and lets you add your own
 OpenAI-compatible endpoints (including local models).
 
-## The fastest setup: an API key
+## The fastest setup: `/login`
 
-Set the provider's API key in your environment and you're ready:
+Start Tau and use `/login` to connect a built-in provider:
 
 ```bash
-export OPENAI_API_KEY="sk-..."          # OpenAI
-export ANTHROPIC_API_KEY="sk-ant-..."   # Anthropic
+tau
+```
+
+```text
+/login              # choose a built-in provider
+/login openai       # save an OpenAI API key
+/login openai-codex # authenticate a Codex/ChatGPT subscription via OAuth
 ```
 
 Built-in providers include **OpenAI**, **Anthropic**, **OpenAI Codex**
-(subscription), **OpenRouter**, and **Hugging Face**. Once the matching key is
-present, the provider is usable.
+(subscription), **OpenRouter**, and **Hugging Face**. Credentials saved this way
+live in `~/.tau/credentials.json` (private permissions).
 
 Check what's configured and how each provider will authenticate:
 
@@ -26,20 +31,17 @@ Check what's configured and how each provider will authenticate:
 tau providers
 ```
 
-## Logging in from inside Tau
+## Managing saved credentials
 
-Instead of env vars you can store credentials with Tau:
+Use these slash commands inside Tau:
 
 ```text
-/login              # list built-in providers
-/login openai       # save an API key
-/login openai-codex # authenticate a Codex/ChatGPT subscription via OAuth
+/login [provider]   # add or refresh a saved credential
 /logout [provider]  # remove a saved credential
 ```
 
-Credentials saved this way live in `~/.tau/credentials.json` (private
-permissions) and take precedence over environment variables. `/logout` only
-edits saved credentials — it never touches your env vars or `providers.json`.
+Saved credentials take precedence over environment variables. `/logout` only
+edits saved credentials — it never touches your environment or `providers.json`.
 
 :::note[Codex subscription]
 `/login openai-codex` opens the OpenAI OAuth flow, listens for the local
@@ -95,5 +97,6 @@ Hugging Face organization billing is just a header on the provider entry:
 
 For a given provider, Tau uses, in order: a stored credential in
 `~/.tau/credentials.json`, then the environment variable named by the provider's
-`api_key_env`. Built-in providers added via `/login` read their saved credential;
-custom/env providers read the env var.
+`api_key_env`. Use `/login` for built-in providers. Custom/local providers
+created with `tau setup` use their configured environment variable until Tau has
+a custom-provider credential form.
