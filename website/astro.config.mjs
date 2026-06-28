@@ -3,7 +3,7 @@ import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import path from "node:path";
 
-const BASE = "/tau/";
+const BASE = "/";
 const DOCS_ROOT = path.resolve("./src/content/docs");
 
 /**
