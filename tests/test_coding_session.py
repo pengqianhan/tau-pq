@@ -331,6 +331,29 @@ async def test_terminal_command_uses_configured_shell_command_prefix(tmp_path: P
     assert result.added_to_context is False
 
 
+@pytest.mark.anyio
+async def test_agent_bash_tool_uses_configured_shell_command_prefix(tmp_path: Path) -> None:
+    storage = JsonlSessionStorage(tmp_path / "session.jsonl")
+    session = await CodingSession.load(
+        CodingSessionConfig(
+            provider=FakeProvider([]),
+            model="fake",
+            system="You are Tau.",
+            storage=storage,
+            cwd=tmp_path,
+            shell_command_prefix="shopt -s expand_aliases\nalias greet='printf agent-alias'",
+        )
+    )
+    bash_tool = next(tool for tool in session.tools if tool.name == "bash")
+
+    result = await bash_tool.execute({"command": "greet"})
+
+    assert result.ok is True
+    assert result.content == "agent-alias"
+    assert result.data is not None
+    assert result.data["shell_command_prefix_applied"] is True
+
+
 def test_parse_terminal_command_prefixes() -> None:
     assert parse_terminal_command("! pwd") is not None
     add_request = parse_terminal_command("! pwd")
