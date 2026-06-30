@@ -163,9 +163,9 @@ class AgentTool:
 
 ### ✅ 本章打卡
 
-- [ ] 读完 `messages.py`，能说出三种消息分别代表谁说的话
-- [ ] 读完 `events.py`，能凭记忆默写"一轮带工具调用"的完整事件顺序
-- [ ] 读完 `tools.py`，能说出 `AgentTool` 的四个字段及各自作用
+- [ ] 读完 [`messages.py`](../src/tau_agent/messages.py)，能说出三种消息分别代表谁说的话
+- [ ] 读完 [`events.py`](../src/tau_agent/events.py)，能凭记忆默写"一轮带工具调用"的完整事件顺序
+- [ ] 读完 [`tools.py`](../src/tau_agent/tools.py)，能说出 `AgentTool` 的四个字段及各自作用
 - [ ] 完成后回到总览，把 **第 2 章** 那一行勾上
 
 ---
@@ -213,8 +213,8 @@ agent_start → turn_start → message_start → message_delta×2 → message_en
 
 ### ✅ 本章打卡
 
-- [ ] 跑通 `ex1_loop.py`，输出的事件序列与预期一致
-- [ ] 在 `loop.py` 的 `while` 处加 `print`，亲眼确认本例只跑了一轮（turn=1）
+- [ ] 跑通 [`ex1_loop.py`](ex1_loop.py)，输出的事件序列与预期一致
+- [ ] 在 [`loop.py`](../src/tau_agent/loop.py) 的 `while` 处加 `print`，亲眼确认本例只跑了一轮（turn=1）
 - [ ] 用 `python -m pdb` 单步进入循环，`pp event` 看清每个事件
 - [ ] 改 delta 数量重跑，确认 `message_delta` 数量随之变化、`message_end` 仍只有一个
 - [ ] 完成后回到总览，把 **第 3 章** 那一行勾上
@@ -267,11 +267,11 @@ assistant: The sum is 5.
 
 ### ✅ 本章打卡
 
-- [ ] 跑通 `ex2_tools.py`，最终 transcript 恰好 4 条
+- [ ] 跑通 [`ex2_tools.py`](ex2_tools.py)，最终 transcript 恰好 4 条
 - [ ] 用 pdb 在 `add_executor` 处看到 `arguments == {'a': 2, 'b': 3}`
-- [ ] 在 `loop.py` 的 `if not assistant_message.tool_calls:` 处加 `print`，理解为何会跑第二轮
+- [ ] 在 [`loop.py`](../src/tau_agent/loop.py) 的 `if not assistant_message.tool_calls:` 处加 `print`，理解为何会跑第二轮
 - [ ] 在 `add_executor` 里 `raise` 一个异常，确认程序不崩、变成 `ok=False` 结果
-- [ ] 读 `harness.prompt()`，能说清 harness 与 `run_agent_loop` 的分工
+- [ ] 读 [`harness.py`](../src/tau_agent/harness.py) 的 `prompt()`，能说清 harness 与 `run_agent_loop` 的分工
 - [ ] 完成后回到总览，把 **第 4 章** 那一行勾上
 
 ---
@@ -310,8 +310,8 @@ uv run python tutorial/ex3_realtool.py
 
 ### ✅ 本章打卡
 
-- [ ] 跑通 `ex3_realtool.py`，看清 `ok` / `content` / `data` 三个字段
-- [ ] 读 `create_read_tool_definition` 与 `to_agent_tool`，说出"真实工具三件套"
+- [ ] 跑通 [`ex3_realtool.py`](ex3_realtool.py)，看清 `ok` / `content` / `data` 三个字段
+- [ ] 在 [`tools.py`](../src/tau_coding/tools.py) 里读 `create_read_tool_definition` 与 `to_agent_tool`，说出"真实工具三件套"
 - [ ] 把工具换成 `create_bash_tool`，成功跑出 `echo hello`
 - [ ] （进阶，可选）用真实 `read` 工具 + `FakeProvider` 拼一个会读文件的迷你 Agent
 - [ ] 完成后回到总览，把 **第 5 章** 那一行勾上
@@ -354,7 +354,7 @@ uv run tau
 
 ### ✅ 本章打卡
 
-- [ ] 读 `cli.py` 入口，能指出"构造 provider → 构造 harness → 订阅事件 → renderer"这条主线
+- [ ] 读 [`cli.py`](../src/tau_coding/cli.py) 入口，能指出"构造 provider → 构造 harness → 订阅事件 → renderer"这条主线
 - [ ] 理解 CLI 用的也是示例 1~2 里同一套事件契约
 - [ ] （可选）`/login` 配置一个真实 provider，用 `tau -p "..."` 真跑一次
 - [ ] 完成后回到总览，把 **第 6 章** 那一行勾上
@@ -376,13 +376,13 @@ Tau 的作者把"逐阶段的搭建日志"留在了 [`dev-notes/`](../dev-notes/
 
 ### ✅ 本章打卡
 
-- [ ] 读完 `01-architecture.md`
-- [ ] 读完 `05-core-types-and-events.md`
-- [ ] 读完 `02-agent-loop.md`
-- [ ] 读完 `03-tools.md`
-- [ ] 读完 `harness.md`
-- [ ] 读完 `04-sessions.md`
-- [ ] （可选）挑一篇感兴趣的 `architecture/phase-*.md` 深入
+- [ ] 读完 [`01-architecture.md`](../dev-notes/design/01-architecture.md)
+- [ ] 读完 [`05-core-types-and-events.md`](../dev-notes/design/05-core-types-and-events.md)
+- [ ] 读完 [`02-agent-loop.md`](../dev-notes/design/02-agent-loop.md)
+- [ ] 读完 [`03-tools.md`](../dev-notes/design/03-tools.md)
+- [ ] 读完 [`harness.md`](../dev-notes/design/harness.md)
+- [ ] 读完 [`04-sessions.md`](../dev-notes/design/04-sessions.md)
+- [ ] （可选）挑一篇感兴趣的 [`architecture/phase-*.md`](../dev-notes/architecture/) 深入
 - [ ] 完成后回到总览，把 **第 7 章** 那一行勾上
 
 ---
