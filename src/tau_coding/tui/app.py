@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import traceback
-from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -60,6 +60,7 @@ from tau_ai import ProviderErrorEvent, ProviderEvent
 from tau_ai.provider import CancellationToken
 from tau_coding.catalog_loader import save_user_catalog_entries
 from tau_coding.commands import (
+    LOGIN_PROVIDER_ALIASES,
     CommandRegistry,
     create_default_command_registry,
     format_reload_summary,
@@ -73,7 +74,15 @@ from tau_coding.extensions.api import (
     SlotWidgetContent,
     SlotWidgetFactory,
 )
-from tau_coding.oauth import OAuthAuthInfo, OAuthPrompt, login_openai_codex
+from tau_coding.oauth import login_openai_codex
+from tau_coding.oauth_registry import get_oauth_provider, oauth_provider_ids
+from tau_coding.oauth_types import (
+    OAuthAuthInfo,
+    OAuthDeviceCodeInfo,
+    OAuthLoginCallbacks,
+    OAuthPrompt,
+    OAuthSelectPrompt,
+)
 from tau_coding.provider_catalog import (
     BUILTIN_PROVIDER_CATALOG,
     ProviderCatalogEntry,
@@ -1263,8 +1272,48 @@ class CommandOutputScreen(ModalScreen[None]):
         self.query_one("#command-output-scroll", CommandOutputScroll).action_scroll_down()
 
 
+class LoginProviderSearchInput(Input):
+    """Search input that keeps provider-picker navigation local."""
+
+    BINDINGS: ClassVar[list[BindingEntry]] = [
+        Binding("escape", "cancel", "Cancel", show=False, priority=True),
+        Binding("up", "cursor_up", "Up", show=False, priority=True),
+        Binding("down", "cursor_down", "Down", show=False, priority=True),
+    ]
+
+    def _picker(self) -> LoginProviderPickerScreen:
+        return cast(LoginProviderPickerScreen, self.screen)
+
+    def on_key(self, event: Key) -> None:
+        """Route picker control keys before the input edits its text."""
+        if event.key == "up":
+            event.stop()
+            event.prevent_default()
+            self.action_cursor_up()
+        elif event.key == "down":
+            event.stop()
+            event.prevent_default()
+            self.action_cursor_down()
+        elif event.key == "escape":
+            event.stop()
+            event.prevent_default()
+            self.action_cancel()
+
+    def action_cursor_up(self) -> None:
+        """Move the provider picker selection up."""
+        self._picker().action_cursor_up()
+
+    def action_cursor_down(self) -> None:
+        """Move the provider picker selection down."""
+        self._picker().action_cursor_down()
+
+    def action_cancel(self) -> None:
+        """Close the provider picker."""
+        self._picker().action_cancel()
+
+
 class LoginProviderPickerScreen(ModalScreen[str | None]):
-    """Provider picker for the TUI login flow."""
+    """Searchable provider picker for the TUI login flow."""
 
     BINDINGS: ClassVar[list[BindingEntry]] = [
         Binding("escape", "cancel", "Cancel"),
@@ -1282,6 +1331,7 @@ class LoginProviderPickerScreen(ModalScreen[str | None]):
     ) -> None:
         super().__init__()
         self.providers = tuple(providers)
+        self.visible_providers = self.providers
         self.theme = theme
         self.title_text = title
 
@@ -1289,6 +1339,10 @@ class LoginProviderPickerScreen(ModalScreen[str | None]):
         """Compose the provider picker."""
         with Vertical(id="login-provider-picker"):
             yield Static(self.title_text, id="login-provider-title")
+            yield LoginProviderSearchInput(
+                placeholder="Search providers",
+                id="login-provider-search",
+            )
             yield ListView(
                 *[
                     ListItem(Label(_login_provider_label(provider), markup=False))
@@ -1299,10 +1353,24 @@ class LoginProviderPickerScreen(ModalScreen[str | None]):
             yield Static("Enter selects - Escape closes", id="login-provider-help")
 
     def on_mount(self) -> None:
-        """Focus the provider list."""
-        provider_list = self.query_one("#login-provider-list", ListView)
-        provider_list.index = 0
-        provider_list.focus()
+        """Focus the provider search field."""
+        self.query_one("#login-provider-search", Input).focus()
+        self._refresh_provider_list()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Filter providers as the search value changes."""
+        if event.input.id != "login-provider-search":
+            return
+        event.stop()
+        self.visible_providers = _filter_login_providers(self.providers, event.value)
+        self._refresh_provider_list()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Select the highlighted provider from the search field."""
+        if event.input.id != "login-provider-search":
+            return
+        event.stop()
+        self._select_visible_provider()
 
     def on_key(self, event: Key) -> None:
         """Route provider picker keys to the list."""
@@ -1318,7 +1386,8 @@ class LoginProviderPickerScreen(ModalScreen[str | None]):
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Dismiss with the selected provider name."""
-        self.dismiss(self.providers[event.index].name)
+        event.stop()
+        self._select_visible_provider()
 
     def action_cursor_up(self) -> None:
         """Move to the previous provider."""
@@ -1330,11 +1399,35 @@ class LoginProviderPickerScreen(ModalScreen[str | None]):
 
     def action_select_cursor(self) -> None:
         """Select the highlighted provider."""
-        self.query_one("#login-provider-list", ListView).action_select_cursor()
+        self._select_visible_provider()
 
     def action_cancel(self) -> None:
         """Close without selecting a provider."""
         self.dismiss(None)
+
+    def _select_visible_provider(self) -> None:
+        provider_list = self.query_one("#login-provider-list", ListView)
+        index = provider_list.index
+        if index is None or not self.visible_providers:
+            return
+        self.dismiss(self.visible_providers[index].name)
+
+    def _refresh_provider_list(self) -> None:
+        provider_list = self.query_one("#login-provider-list", ListView)
+        provider_list.clear()
+        provider_list.extend(
+            [
+                ListItem(Label(_login_provider_label(provider), markup=False))
+                for provider in self.visible_providers
+            ]
+        )
+        provider_list.index = 0 if self.visible_providers else None
+        help_text = (
+            "Enter selects - Escape closes"
+            if self.visible_providers
+            else "No matching providers - Escape closes"
+        )
+        self.query_one("#login-provider-help", Static).update(help_text)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1988,18 +2081,26 @@ class OAuthLoginScreen(ModalScreen[OAuthCredential | None]):
         Binding("escape", "cancel", "Cancel"),
     ]
 
-    def __init__(self, provider: ProviderCatalogEntry, *, theme: TuiTheme) -> None:
+    def __init__(
+        self,
+        provider: ProviderCatalogEntry,
+        *,
+        theme: TuiTheme,
+        login: Callable[[OAuthLoginCallbacks], Awaitable[OAuthCredential]] | None = None,
+    ) -> None:
         super().__init__()
         self.provider = provider
         self.theme = theme
+        self._login = login
         self._manual_code_future: asyncio.Future[str] | None = None
         self._manual_code_value: str | None = None
+        self._prompt_allows_empty = False
 
     def compose(self) -> ComposeResult:
         """Compose the OAuth login prompt."""
         with Vertical(id="login-screen"):
             yield Static(f"Login: {self.provider.display_name}", id="login-title")
-            yield Static("Complete the browser login, or paste the redirect URL.", id="login-help")
+            yield Static("Follow the provider instructions to complete login.", id="login-help")
             yield Static("", id="login-oauth-url")
             yield Input(
                 placeholder="Paste redirect URL or authorization code",
@@ -2014,10 +2115,19 @@ class OAuthLoginScreen(ModalScreen[OAuthCredential | None]):
 
     async def _run_login(self) -> None:
         try:
-            credential = await login_openai_codex(
-                on_auth=self._show_auth,
-                on_prompt=self._prompt_for_code,
-                on_manual_code_input=self._manual_code_input,
+            oauth_provider = get_oauth_provider(self.provider.name)
+            login = self._login or (oauth_provider.login if oauth_provider is not None else None)
+            if login is None:
+                raise RuntimeError(f"No OAuth implementation for {self.provider.name}")
+            credential = await login(
+                OAuthLoginCallbacks(
+                    on_auth=self._show_auth,
+                    on_device_code=self._show_device_code,
+                    on_prompt=self._prompt_for_code,
+                    on_select=self._select_option,
+                    on_progress=self._show_progress,
+                    on_manual_code_input=self._manual_code_input,
+                )
             )
         except Exception as exc:  # noqa: BLE001 - surface OAuth failures in the TUI
             self.query_one("#login-help", Static).update(f"OAuth failed: {exc}")
@@ -2029,9 +2139,26 @@ class OAuthLoginScreen(ModalScreen[OAuthCredential | None]):
         if info.instructions:
             self.query_one("#login-help", Static).update(info.instructions)
 
+    def _show_device_code(self, info: OAuthDeviceCodeInfo) -> None:
+        self.query_one("#login-oauth-url", Static).update(info.verification_uri)
+        self.query_one("#login-help", Static).update(
+            f"Open the URL and enter code: {info.user_code}"
+        )
+
+    def _show_progress(self, message: str) -> None:
+        self.query_one("#login-help", Static).update(message)
+
     async def _prompt_for_code(self, prompt: OAuthPrompt) -> str:
         self.query_one("#login-help", Static).update(prompt.message)
-        return await self._manual_code_input()
+        self._prompt_allows_empty = prompt.allow_empty
+        try:
+            return await self._manual_code_input()
+        finally:
+            self._prompt_allows_empty = False
+
+    async def _select_option(self, prompt: OAuthSelectPrompt) -> str | None:
+        self.query_one("#login-help", Static).update(prompt.message)
+        return prompt.options[0].id if prompt.options else None
 
     async def _manual_code_input(self) -> str:
         if self._manual_code_value is not None:
@@ -2049,7 +2176,7 @@ class OAuthLoginScreen(ModalScreen[OAuthCredential | None]):
             return
         event.stop()
         value = event.value.strip()
-        if not value:
+        if not value and not self._prompt_allows_empty:
             return
         self._manual_code_value = value
         if self._manual_code_future is not None and not self._manual_code_future.done():
@@ -2461,6 +2588,7 @@ class TauTuiApp(App[None]):
         max-height: 10;
     }
 
+    #login-provider-search,
     #model-picker-search {
         height: 3;
         margin-bottom: 1;
@@ -2908,7 +3036,7 @@ class TauTuiApp(App[None]):
             if command.custom_provider_login_requested:
                 self._open_custom_provider_login()
             if command.login_provider is not None:
-                self._open_login(command.login_provider)
+                self._open_login(command.login_provider, method=command.login_method)
             if command.logout_picker_requested:
                 self._open_logout_picker()
             if command.logout_provider is not None:
@@ -4151,13 +4279,21 @@ class TauTuiApp(App[None]):
                 providers,
                 theme=self.tui_settings.resolved_theme,
             ),
-            callback=self._handle_login_provider_result,
+            callback=lambda provider_name: self._handle_login_provider_result(
+                provider_name,
+                method=method,
+            ),
         )
 
-    def _handle_login_provider_result(self, provider_name: str | None) -> None:
+    def _handle_login_provider_result(
+        self,
+        provider_name: str | None,
+        *,
+        method: str | None = None,
+    ) -> None:
         if provider_name is None:
             return
-        self._open_login(provider_name)
+        self._open_login(provider_name, method=method)
 
     def _open_custom_provider_login(self) -> None:
         self.push_screen(
@@ -4207,14 +4343,32 @@ class TauTuiApp(App[None]):
         self._notify(f"Saved custom provider {result.display_name}.")
         self._refresh()
 
-    def _open_login(self, provider_name: str) -> None:
+    def _open_login(self, provider_name: str, *, method: str | None = None) -> None:
         entry = builtin_provider_entry(provider_name)
         if entry is None:
             self._notify(f"Unknown provider: {provider_name}", severity="error")
             return
-        if entry.kind == "openai-codex":
+        use_oauth = method == "subscription" or (
+            method is None and "api_key" not in entry.auth_methods
+        )
+        if use_oauth and get_oauth_provider(entry.name) is not None:
+            login = None
+            if entry.name == "openai-codex":
+
+                async def login(callbacks: OAuthLoginCallbacks) -> OAuthCredential:
+                    return await login_openai_codex(
+                        on_auth=callbacks.on_auth,
+                        on_prompt=callbacks.on_prompt,
+                        on_manual_code_input=callbacks.on_manual_code_input,
+                        on_progress=callbacks.on_progress,
+                    )
+
             self.push_screen(
-                OAuthLoginScreen(entry, theme=self.tui_settings.resolved_theme),
+                OAuthLoginScreen(
+                    entry,
+                    theme=self.tui_settings.resolved_theme,
+                    login=login,
+                ),
                 callback=lambda credential: self._handle_oauth_login_result(entry, credential),
             )
             return
@@ -4681,7 +4835,10 @@ class TauTuiApp(App[None]):
             skills=self.session.skills,
             prompt_templates=self.session.prompt_templates,
             model_names=self.session.available_models,
-            provider_names=self.session.available_providers,
+            provider_names=(
+                *self.session.available_providers,
+                *LOGIN_PROVIDER_ALIASES,
+            ),
             thinking_levels=getattr(self.session, "available_thinking_levels", ()),
             theme_names=BUILTIN_TUI_THEME_NAMES,
             session_options=_session_options(self.session),
@@ -5022,13 +5179,14 @@ def _login_provider_label(provider: ProviderCatalogEntry) -> str:
 def _subscription_login_providers(
     providers: Sequence[ProviderCatalogEntry],
 ) -> tuple[ProviderCatalogEntry, ...]:
-    return tuple(provider for provider in providers if provider.kind == "openai-codex")
+    provider_ids = oauth_provider_ids()
+    return tuple(provider for provider in providers if provider.name in provider_ids)
 
 
 def _api_key_login_providers(
     providers: Sequence[ProviderCatalogEntry],
 ) -> tuple[ProviderCatalogEntry, ...]:
-    return tuple(provider for provider in providers if provider.kind != "openai-codex")
+    return tuple(provider for provider in providers if "api_key" in provider.auth_methods)
 
 
 def _stored_credential_providers(
@@ -5072,6 +5230,20 @@ def _model_picker_label(
     )
     suffix = " [scoped]" if scoped else ""
     return f"{marker}{choice.provider_name}:{choice.model}{suffix}"
+
+
+def _filter_login_providers(
+    providers: Sequence[ProviderCatalogEntry],
+    query: str,
+) -> tuple[ProviderCatalogEntry, ...]:
+    normalized = query.strip().casefold()
+    if not normalized:
+        return tuple(providers)
+    return tuple(
+        provider
+        for provider in providers
+        if normalized in provider.name.casefold() or normalized in provider.display_name.casefold()
+    )
 
 
 def _filter_model_choices(choices: Sequence[ModelChoice], query: str) -> tuple[ModelChoice, ...]:
